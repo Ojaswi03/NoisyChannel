@@ -9,6 +9,7 @@ echo " Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 # creating an environment
+python3 -m venv venv
 source  venv/bin/activate
 
 # Essential tools
