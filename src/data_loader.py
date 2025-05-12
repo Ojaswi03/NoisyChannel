@@ -28,7 +28,7 @@ def mnistLoader(batch_size = 64):
     """
 def cifar10Loader(batch_size = 64):
     transform = transforms.Compose([
-        transforms.toTensor(),
+        transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
     ])
     trainDataSet = datasets.CIFAR10(root = './data', train = True, download = True, transform = transform)
@@ -58,8 +58,3 @@ def main():
 if __name__ == '__main__':
     main()
         
-
-
-
-
-

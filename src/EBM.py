@@ -1,102 +1,368 @@
+# import torch
+# import numpy as np
+# import matplotlib.pyplot as plt
+# import os
+# from data_loader import mnistLoader, cifar10Loader
+
+# # ----- Core functions -----
+# def softmax(logits):
+#     exp_logits = torch.exp(logits - torch.max(logits, dim=1, keepdim=True)[0])
+#     return exp_logits / torch.sum(exp_logits, dim=1, keepdim=True)
+
+# def cross_entropy_loss(predictions, targets):
+#     batch_size = predictions.shape[0]
+#     log_preds = torch.log(predictions + 1e-9)
+#     return -torch.sum(targets * log_preds) / batch_size
+
+# def compute_gradients(inputs, predictions, targets):
+#     batch_size = inputs.shape[0]
+#     grad_logits = predictions - targets
+#     return torch.matmul(inputs.T, grad_logits) / batch_size
+
+# def evaluate_model(weights, test_loader, num_classes):
+#     correct, total = 0, 0
+#     for inputs, targets in test_loader:
+#         inputs = inputs.view(inputs.size(0), -1)
+#         logits = torch.matmul(inputs, weights)
+#         preds = softmax(logits)
+#         correct += (torch.argmax(preds, dim=1) == targets).sum().item()
+#         total += targets.size(0)
+#     return correct / total
+
+# # ----- Centralized Training -----
+# def train_centralized(train_loader, test_loader, num_features, num_classes, epochs, lr):
+#     weights = torch.zeros((num_features, num_classes))
+#     acc_curve, loss_curve = [], []
+
+#     for epoch in range(epochs):
+#         total_loss = 0
+#         for inputs, targets in train_loader:
+#             inputs = inputs.view(inputs.size(0), -1)
+#             targets_one_hot = torch.eye(num_classes)[targets]
+
+#             logits = torch.matmul(inputs, weights)
+#             preds = softmax(logits)
+#             loss = cross_entropy_loss(preds, targets_one_hot)
+#             grad = compute_gradients(inputs, preds, targets_one_hot)
+
+#             weights -= lr * grad
+#             total_loss += loss.item()
+
+#         acc = evaluate_model(weights, test_loader, num_classes)
+#         acc_curve.append(acc)
+#         loss_curve.append(total_loss / len(train_loader))
+#         print(f"[Centralized] Epoch {epoch+1}: Accuracy = {acc:.4f}, Loss = {loss_curve[-1]:.4f}")
+
+#     return acc_curve, loss_curve
+
+# # ----- Federated Training -----
+# def train_federated(client_loaders, test_loader, num_features, num_classes, sigma, lr, epochs, robust=False):
+#     global_weights = torch.zeros((num_features, num_classes))
+#     acc_curve, loss_curve = [], []
+
+#     for epoch in range(epochs):
+#         local_weights = []
+#         total_loss = 0
+
+#         for loader in client_loaders:
+#             w = global_weights.clone()
+#             for inputs, targets in loader:
+#                 inputs = inputs.view(inputs.size(0), -1)
+#                 targets_one_hot = torch.eye(num_classes)[targets]
+
+#                 logits = torch.matmul(inputs, w)
+#                 preds = softmax(logits)
+#                 loss = cross_entropy_loss(preds, targets_one_hot)
+#                 grad = compute_gradients(inputs, preds, targets_one_hot)
+
+#                 if robust:
+#                     grad_norm_sq = torch.sum(grad ** 2)
+#                     loss += sigma ** 2 * grad_norm_sq
+#                     grad += 2 * sigma ** 2 * grad
+
+#                 w = w - lr * grad
+#                 total_loss += loss.item()
+
+#             local_weights.append(w)
+
+#         global_weights = torch.stack(local_weights).mean(dim=0)
+#         acc = evaluate_model(global_weights, test_loader, num_classes)
+#         acc_curve.append(acc)
+#         loss_curve.append(total_loss / len(client_loaders))
+
+#         print(f"[{'Federated EBM' if robust else 'FedAvg'}] Epoch {epoch+1}: Accuracy = {acc:.4f}, Loss = {loss_curve[-1]:.4f}")
+
+#     return acc_curve, loss_curve
+
+# # ----- Plotting -----
+# def plot_results(acc_ebm, loss_ebm, acc_fl, loss_fl, acc_cent, loss_cent, folder):
+#     os.makedirs(folder, exist_ok=True)
+
+#     plt.clf()
+#     plt.plot(acc_ebm, label="Proposed Federated Learning (EBM)", marker='o')
+#     plt.plot(acc_fl, label="Conventional Federated Learning (FedAvg)", marker='s')
+#     plt.plot(acc_cent, label="Centralized Learning", marker='^')
+#     plt.title("Accuracy Comparison")
+#     plt.xlabel("Epochs")
+#     plt.ylabel("Accuracy")
+#     plt.grid(True)
+#     plt.legend()
+#     plt.tight_layout()
+#     plt.savefig(os.path.join(folder, "accuracy_comparison.png"), dpi = 300)
+
+#     plt.clf()
+#     plt.semilogy(loss_ebm, label="Proposed Federated Learning (EBM)", marker='o')
+#     plt.semilogy(loss_fl, label="Conventional Federated Learning (FedAvg)", marker='s')
+#     plt.semilogy(loss_cent, label="Centralized Learning", marker='^')
+#     plt.title("Loss Comparison (Log Scale)")
+#     plt.xlabel("Epochs")
+#     plt.ylabel("Loss (log scale)")
+#     plt.grid(True, which='both', axis='y')
+#     plt.legend()
+#     plt.tight_layout()
+#     plt.savefig(os.path.join(folder, "loss_comparison.png"), dpi = 300)
+
+# # ----- Main -----
+# def main():
+#     try:
+#         dataset_choice = input("Select dataset (MNIST/CIFAR10): ").strip().lower()
+#         epochs = int(input("Enter number of epochs (default=10): ") or 10)
+#         batch_size = int(input("Enter batch size (default=64): ") or 64)
+#         sigma = float(input("Enter communication noise level sigma (default=0.1): ") or 0.1)
+#         lr = float(input("Enter learning rate (default=0.1): ") or 0.1)
+#         num_clients = int(input("Enter number of clients (default=5): ") or 5)
+#     except ValueError:
+#         print("Invalid input. Using default settings.")
+#         dataset_choice, num_clients, batch_size, epochs, lr, sigma = "mnist", 5, 64, 10, 0.1, 0.1
+
+#     if dataset_choice == "mnist":
+#         train_loader, test_loader = mnistLoader(batch_size=batch_size)
+#         num_features = 28 * 28
+#         num_classes = 10
+#     elif dataset_choice == "cifar10":
+#         train_loader, test_loader = cifar10Loader(batch_size=batch_size)
+#         num_features = 3 * 32 * 32
+#         num_classes = 10
+#     else:
+#         print("Invalid dataset choice. Defaulting to MNIST.")
+#         train_loader, test_loader = mnistLoader(batch_size=batch_size)
+#         num_features = 28 * 28
+#         num_classes = 10
+
+#     dataset = list(train_loader.dataset)
+#     split_size = len(dataset) // num_clients
+#     client_loaders = [
+#         torch.utils.data.DataLoader(dataset[i * split_size:(i + 1) * split_size], batch_size=batch_size, shuffle=True)
+#         for i in range(num_clients)
+#     ]
+
+#     acc_ebm, loss_ebm = train_federated(client_loaders, test_loader,
+#                                         num_features, num_classes, sigma, lr,
+#                                         epochs=epochs, robust=True)
+
+#     acc_fl, loss_fl = train_federated(client_loaders, test_loader,
+#                                       num_features, num_classes, sigma, lr,
+#                                       epochs=epochs, robust=False)
+
+#     acc_cent, loss_cent = train_centralized(train_loader, test_loader,
+#                                             num_features, num_classes,
+#                                             epochs=epochs, lr=lr)
+
+#     plot_results(acc_ebm, loss_ebm, acc_fl, loss_fl, acc_cent, loss_cent, folder="diagram-EBM")
+
+# if __name__ == "__main__":
+#     main()
+
+
 import torch
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from data_loader import mnistLoader, cifar10Loader
 
-# ----------- Core Functions from Scratch -----------
-
-# Softmax function
+# ----- Core functions -----
 def softmax(logits):
     exp_logits = torch.exp(logits - torch.max(logits, dim=1, keepdim=True)[0])
     return exp_logits / torch.sum(exp_logits, dim=1, keepdim=True)
 
-# Cross-entropy loss (mean over batch)
 def cross_entropy_loss(predictions, targets):
     batch_size = predictions.shape[0]
-    log_preds = torch.log(predictions + 1e-9)  # numerical stability
-    loss = -torch.sum(targets * log_preds) / batch_size
-    return loss
+    log_preds = torch.log(predictions + 1e-9)
+    return -torch.sum(targets * log_preds) / batch_size
 
-# Gradient of cross-entropy loss w.r.t weights
 def compute_gradients(inputs, predictions, targets):
     batch_size = inputs.shape[0]
-    grad_logits = predictions - targets  # derivative w.r.t logits
-    grad_weights = torch.matmul(inputs.T, grad_logits) / batch_size  # (features x classes)
-    return grad_weights
-
-# Gradient norm squared ( ||grad||^2 )
-def gradient_norm_squared(grad):
-    return torch.sum(grad**2)
-
-# SGD update step
-def sgd_update(weights, grad, lr):
-    return weights - lr * grad
-
-# ----------- Expectation-Based Model Training -----------
-
-def train_expectation_based_model(train_loader, num_features, num_classes, sigma_e=0.1, epochs=5, lr=0.1):
-    # Initialize weights
-    weights = torch.zeros((num_features, num_classes), requires_grad=False)
-
-    for epoch in range(epochs):
-        total_loss = 0
-        for inputs, targets in train_loader:
-            inputs = inputs.view(inputs.size(0), -1)  # Flatten (batch_size x num_features)
-            targets_one_hot = torch.eye(num_classes)[targets]  # One-hot encoding
-
-            logits = torch.matmul(inputs, weights)
-            preds = softmax(logits)
-            loss = cross_entropy_loss(preds, targets_one_hot)
-
-            grad = compute_gradients(inputs, preds, targets_one_hot)
-            grad_norm_sq = gradient_norm_squared(grad)
-
-            # Robust Loss: L + σ_e^2 ||grad||^2
-            robust_loss = loss + sigma_e**2 * grad_norm_sq
-
-            # Robust Gradient: grad + 2σ_e^2 * grad
-            robust_grad = grad + 2 * sigma_e**2 * grad
-
-            # Update weights
-            weights = sgd_update(weights, robust_grad, lr)
-
-            total_loss += robust_loss.item()
-        
-        avg_loss = total_loss / len(train_loader)
-        print(f"Epoch {epoch+1}, Robust Loss: {avg_loss:.4f}")
-    
-    return weights
-
-# ----------- Evaluation -----------
+    grad_logits = predictions - targets
+    return torch.matmul(inputs.T, grad_logits) / batch_size
 
 def evaluate_model(weights, test_loader, num_classes):
-    correct = 0
-    total = 0
+    correct, total = 0, 0
     for inputs, targets in test_loader:
         inputs = inputs.view(inputs.size(0), -1)
         logits = torch.matmul(inputs, weights)
         preds = softmax(logits)
-        predicted_classes = torch.argmax(preds, dim=1)
-        correct += (predicted_classes == targets).sum().item()
+        correct += (torch.argmax(preds, dim=1) == targets).sum().item()
         total += targets.size(0)
     return correct / total
 
-# ----------- Main -----------
+def moving_average(data, window_size=3):
+    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
+# ----- Centralized Training -----
+def train_centralized(train_loader, test_loader, num_features, num_classes, epochs, lr):
+    weights = torch.zeros((num_features, num_classes))
+    acc_curve, loss_curve = [], []
+
+    for epoch in range(epochs):
+        total_loss = 0
+        for inputs, targets in train_loader:
+            inputs = inputs.view(inputs.size(0), -1)
+            targets_one_hot = torch.eye(num_classes)[targets]
+
+            logits = torch.matmul(inputs, weights)
+            preds = softmax(logits)
+            loss = cross_entropy_loss(preds, targets_one_hot)
+            grad = compute_gradients(inputs, preds, targets_one_hot)
+
+            weights -= lr * grad
+            total_loss += loss.item()
+
+        acc = evaluate_model(weights, test_loader, num_classes)
+        acc_curve.append(acc)
+        loss_curve.append(total_loss / len(train_loader))
+        print(f"[Centralized] Epoch {epoch+1}: Accuracy = {acc:.4f}, Loss = {loss_curve[-1]:.4f}")
+
+    return acc_curve, loss_curve
+
+# ----- Federated Training -----
+def train_federated(client_loaders, test_loader, num_features, num_classes, sigma, lr, epochs, robust=False):
+    global_weights = torch.zeros((num_features, num_classes))
+    acc_curve, loss_curve = [], []
+
+    for epoch in range(epochs):
+        local_weights = []
+        total_loss = 0
+
+        for loader in client_loaders:
+            w = global_weights.clone()
+            for inputs, targets in loader:
+                inputs = inputs.view(inputs.size(0), -1)
+                targets_one_hot = torch.eye(num_classes)[targets]
+
+                logits = torch.matmul(inputs, w)
+                preds = softmax(logits)
+                loss = cross_entropy_loss(preds, targets_one_hot)
+                grad = compute_gradients(inputs, preds, targets_one_hot)
+
+                if robust:
+                    grad_norm_sq = torch.sum(grad ** 2)
+                    loss += sigma ** 2 * grad_norm_sq
+                    grad += 2 * sigma ** 2 * grad
+
+                w = w - lr * grad
+                total_loss += loss.item()
+
+            local_weights.append(w)
+
+        global_weights = torch.stack(local_weights).mean(dim=0)
+        acc = evaluate_model(global_weights, test_loader, num_classes)
+        acc_curve.append(acc)
+        loss_curve.append(total_loss / len(client_loaders))
+
+        print(f"[{'Federated EBM' if robust else 'FedAvg'}] Epoch {epoch+1}: Accuracy = {acc:.4f}, Loss = {loss_curve[-1]:.4f}")
+
+    return acc_curve, loss_curve
+
+# ----- Plotting -----
+def plot_results(acc_ebm, loss_ebm, acc_fl, loss_fl, acc_cent, loss_cent, folder):
+    os.makedirs(folder, exist_ok=True)
+
+    # Smooth the curves slightly
+    acc_ebm = moving_average(acc_ebm)
+    acc_fl = moving_average(acc_fl)
+    acc_cent = moving_average(acc_cent)
+
+    loss_ebm = moving_average(loss_ebm)
+    loss_fl = moving_average(loss_fl)
+    loss_cent = moving_average(loss_cent)
+
+    epochs = range(1, len(acc_ebm) + 1)
+
+    # Plot Accuracy
+    plt.figure()
+    plt.plot(epochs, acc_cent, label="Centralized Learning", marker='^')
+    plt.plot(epochs, acc_ebm, label="Proposed Federated Learning (EBM)", marker='o')
+    plt.plot(epochs, acc_fl, label="Conventional Federated Learning (FedAvg)", marker='s')
+    plt.title("Accuracy Comparison")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(folder, "accuracy_comparison.png"), dpi=300)
+
+    # Plot Loss (log scale)
+    plt.figure()
+    plt.semilogy(epochs, loss_fl, label="Conventional Federated Learning (FedAvg)", marker='s')
+    plt.semilogy(epochs, loss_ebm, label="Proposed Federated Learning (EBM)", marker='o')
+    plt.semilogy(epochs, loss_cent, label="Centralized Learning", marker='^')
+    plt.title("Loss Comparison (Log Scale)")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss (log scale)")
+    plt.grid(True, which='both', axis='y')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(folder, "loss_comparison.png"), dpi=300)
+
+    plt.close('all')
+
+# ----- Main -----
 def main():
-    # DataLoader setup
-    transform = transforms.Compose([transforms.ToTensor()])
-    train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-    
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+    try:
+        dataset_choice = input("Select dataset (MNIST/CIFAR10): ").strip().lower()
+        epochs = int(input("Enter number of epochs (default=10): ") or 10)
+        batch_size = int(input("Enter batch size (default=64): ") or 64)
+        sigma = float(input("Enter communication noise level sigma (default=0.1): ") or 0.1)
+        lr = float(input("Enter learning rate (default=0.1): ") or 0.1)
+        num_clients = int(input("Enter number of clients (default=5): ") or 5)
+    except ValueError:
+        print("Invalid input. Using default settings.")
+        dataset_choice, num_clients, batch_size, epochs, lr, sigma = "mnist", 5, 64, 10, 0.1, 0.1
 
-    num_features = 28 * 28
-    num_classes = 10
+    if dataset_choice == "mnist":
+        train_loader, test_loader = mnistLoader(batch_size=batch_size)
+        num_features = 28 * 28
+        num_classes = 10
+    elif dataset_choice == "cifar10":
+        train_loader, test_loader = cifar10Loader(batch_size=batch_size)
+        num_features = 3 * 32 * 32
+        num_classes = 10
+    else:
+        print("Invalid dataset choice. Defaulting to MNIST.")
+        train_loader, test_loader = mnistLoader(batch_size=batch_size)
+        num_features = 28 * 28
+        num_classes = 10
 
-    weights = train_expectation_based_model(train_loader, num_features, num_classes, sigma_e=0.1, epochs=5, lr=0.1)
-    accuracy = evaluate_model(weights, test_loader, num_classes)
-    print(f"Test Accuracy: {accuracy:.4f}")
+    dataset = list(train_loader.dataset)
+    split_size = len(dataset) // num_clients
+    client_loaders = [
+        torch.utils.data.DataLoader(dataset[i * split_size:(i + 1) * split_size], batch_size=batch_size, shuffle=True)
+        for i in range(num_clients)
+    ]
+
+    acc_ebm, loss_ebm = train_federated(client_loaders, test_loader,
+                                        num_features, num_classes, sigma, lr,
+                                        epochs=epochs, robust=True)
+
+    acc_fl, loss_fl = train_federated(client_loaders, test_loader,
+                                      num_features, num_classes, sigma, lr,
+                                      epochs=epochs, robust=False)
+
+    acc_cent, loss_cent = train_centralized(train_loader, test_loader,
+                                            num_features, num_classes,
+                                            epochs=epochs, lr=lr)
+
+    plot_results(acc_ebm, loss_ebm, acc_fl, loss_fl, acc_cent, loss_cent, folder="diagram-EBM")
 
 if __name__ == "__main__":
     main()
