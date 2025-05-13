@@ -186,7 +186,7 @@ def main():
     loss_cent, acc_cent = train_centralized(train_loader, test_loader, num_features, num_classes,
                                             epochs=epochs, lr=lr)
 
-    save_comparison_plots(loss_robust, acc_robust, loss_conv, acc_conv, loss_cent, acc_cent, outdir="diagram-WCM1")
+    save_comparison_plots(loss_robust, acc_robust, loss_conv, acc_conv, loss_cent, acc_cent, outdir="diagram-WCM2")
 
 if __name__ == "__main__":
     main()

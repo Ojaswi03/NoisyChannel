@@ -34,27 +34,4 @@ fi
 echo " Installing core Python packages..."
 pip3 install numpy matplotlib scikit-learn
 
-# # Optional: Download MNIST and CIFAR-10 (if needed)
-# read -p " Do you want to download CIFAR-10 and MNIST datasets locally? (y/n): " download_data
-# if [[ "$download_data" == "y" || "$download_data" == "Y" ]]; then
-#     echo " Downloading datasets..."
-#     python3 -c "
-# import torchvision.datasets as datasets
-# datasets.MNIST(root='./data', download=True)
-# datasets.CIFAR10(root='./data', download=True)
-# "
-#     echo "✅ Datasets downloaded to ./data/"
-# fi
-
-# # Intel GPU drivers and OpenCL tools
-# echo "🖥️ Setting up Intel GPU tools..."
-# sudo apt install -y intel-opencl-icd intel-media-va-driver-non-free clinfo vulkan-tools
-
-# echo "✅ Intel OpenCL and Vulkan tools installed."
-
-# Final diagnostic checks
-# echo "🔍 Running GPU diagnostics..."
-# clinfo | grep 'Device' || echo "⚠️ OpenCL device not found."
-# vulkaninfo | grep 'deviceName' || echo "⚠️ Vulkan device not found."
-
 echo "Setup complete! Ready to roll with PyTorch and datasets."
