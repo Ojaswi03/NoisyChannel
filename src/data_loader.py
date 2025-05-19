@@ -7,22 +7,19 @@ from torch.utils.data import DataLoader
 
 
 
-def mnistLoader(batch_size = 64):
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
+def mnistLoader(batch_size=64, binary=True, root='./data'):
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = datasets.MNIST(root=root, train=True, download=True, transform=transform)
+    test_dataset = datasets.MNIST(root=root, train=False, download=True, transform=transform)
 
-    # Loading the Train and Test datasets
-    trainDataSet = datasets.MNIST(root = './data', train = True, download = True, transform = transform)
-    testDataSet = datasets.MNIST(root = './data', train = False, download = True, transform = transform)
+    if binary:
+        train_dataset.targets = (train_dataset.targets % 2) * 2 - 1
+        test_dataset.targets = (test_dataset.targets % 2) * 2 - 1
 
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return train_loader, test_loader
 
-    # Creating data loaders
-    trainLoader = DataLoader(trainDataSet, batch_size = batch_size, shuffle = True)
-    testLoader = DataLoader(testDataSet, batch_size = batch_size, shuffle = False)
-
-    return trainLoader, testLoader
 
     """CIFAR-10 Data Loader
     """
